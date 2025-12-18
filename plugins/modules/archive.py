@@ -551,30 +551,51 @@ class ZipArchive(Archive):
 
 
 class ReproducibleTGZFile(tarfile.TarFile):
+    """Wrapper for creating reproducible tar.gz archives.
+
+    Note: This class creates file handles that cannot be pickled in Python 3.13+.
+    Use with caution in multi-process environments.
+    """
     def __init__(
         self, name=None, mode=None, compresslevel=-1, fileobj=None, mtime=None, **kwargs
     ):
+        self._user_fileobj = fileobj
+        self._base_fileobj = None
+        self._gzip_fileobj = None
+
         if fileobj is None:
-            fileobj = open(name, mode + "b")
+            self._base_fileobj = open(name, mode + "b")
+            fileobj = self._base_fileobj
 
         try:
             # output filename intentionally empty exclude it from gzip header
-            gzipfileobj = gzip.GzipFile("", mode, compresslevel, fileobj, mtime)
+            self._gzip_fileobj = gzip.GzipFile("", mode, compresslevel, fileobj, mtime)
         except Exception:
-            fileobj.close()
+            if self._base_fileobj:
+                self._base_fileobj.close()
             raise
 
-        # Allow GzipFile to close fileobj as needed
-        gzipfileobj.myfileobj = fileobj
-
         try:
-            super(ReproducibleTGZFile, self).__init__(mode=mode, fileobj=gzipfileobj, **kwargs)
+            super(ReproducibleTGZFile, self).__init__(mode=mode, fileobj=self._gzip_fileobj, **kwargs)
         except Exception:
-            gzipfileobj.close()
+            self._gzip_fileobj.close()
+            if self._base_fileobj:
+                self._base_fileobj.close()
             raise
 
         # Allow TarFile to close GzipFile as needed
         self._extfileobj = False
+
+    def close(self):
+        """Close the tar file and underlying file objects."""
+        try:
+            super(ReproducibleTGZFile, self).close()
+        finally:
+            # Ensure all file objects are closed
+            if self._gzip_fileobj and not self._gzip_fileobj.closed:
+                self._gzip_fileobj.close()
+            if self._base_fileobj and not self._base_fileobj.closed:
+                self._base_fileobj.close()
 
 
 class TarArchive(Archive):
