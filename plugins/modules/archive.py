@@ -620,10 +620,6 @@ class TarArchive(Archive):
                 return None
 
             if self.reproducible_tar:
-                # Remove unused backref that prevents copy
-                if hasattr(tarinfo, "tarfile"):
-                    delattr(tarinfo, "tarfile")
-
                 if tarinfo.isdir():
                     mode = 0o40000 | 0o755
                 else:
